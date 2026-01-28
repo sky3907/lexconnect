@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>LexConnect - Client Dashboard</title>
+    <style>
+        * { font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 0; box-sizing: border-box; }
+        body { display: flex; height: 100vh; background: #f5f7fa; }
+        .sidebar { width: 50%; padding: 20px; border-right: 1px solid #ddd; overflow-y: auto; }
+        .main { width: 50%; padding: 20px; }
+        .chat { height: 60%; border: 1px solid #ddd; padding: 15px; overflow-y: auto; background: white; margin-bottom: 10px; }
+        .input-group { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+        input, button, textarea { padding: 10px; border: 1px solid #ddd; border-radius: 5px; }
+        button { background: #007bff; color: white; border: none; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        button.danger { background: #dc3545; }
+        button.danger:hover { background: #c82333; }
+        .case-card { background: white; padding: 15px; margin: 10px 0; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .lawyer-card { background: #e8f5e8; padding: 12px; margin: 8px 0; border-radius: 6px; border-left: 4px solid #28a745; }
+        .status { padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; }
+        .suggested { background: #fff3cd; color: #856404; }
+        .accepted { background: #d1ecf1; color: #0c5460; }
+        label { font-size: 14px; cursor: pointer; }
+        .new-case-form { background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+        textarea { width: 100%; height: 80px; resize: vertical; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>📋 My Cases (Client ID: 789)</h2>
+        
+        <!-- NEW CASE FORM -->
+        <div class="new-case-form">
+            <h3>➕ New Case</h3>
+            <textarea id="new-case-text" placeholder="Describe your legal issue... (e.g. 'My neighbour encroached my land...')"></textarea>
+            <button onclick="createNewCase()">Create Case</button>
+        </div>
+        
+        <div id="cases">Loading cases...</div>
+        
+        <h3 style="margin-top: 30px;">👨‍⚖️ Lawyer Recommendations</h3>
+        <div id="recommendations">Select a case to see lawyers</div>
+    </div>
+    
+    <div class="main">
+        <h2>🤖 Legal Assistant Chatbot</h2>
+        <div id="chat" class="chat">Type your case details or ask legal questions. Check "Use case context" for case-specific advice.</div>
+        <div class="input-group">
+            <input id="message" type="text" placeholder="What is a civil suit?" style="flex: 1;">
+            <label><input id="use-context" type="checkbox"> Use case context</label>
+            <button onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+
+    <script>
+        let currentCaseId = null;
+        
+        // Load cases on start
+        loadCases();
+        
+        function loadCases() {
+            fetch('/cases?client_id=789')
+                .then(r=>r.json())
+                .then(showCases)
+                .catch(e=>console.error('Cases error:', e));
+        }
+        
+        function showCases(cases) {
+            const div = document.getElementById('cases');
+            if (cases.length === 0) {
+                div.innerHTML = '<p style="color:#666;">No cases yet. Use "New Case" above.</p>';
+                return;
+            }
+            div.innerHTML = cases.map(c => `
+                <div class="case-card">
+                    <h4>${c.issue_type.toUpperCase()} Case #${c.id}</h4>
+                    <p>${c.description.substring(0,100)}${c.description.length>100?'...':''}</p>
+                    <button onclick="loadRecommendations(${c.id})">Get Lawyer Recommendations</button>
+                </div>
+            `).join('');
+        }
+        
+        function createNewCase() {
+            const text = document.getElementById('new-case-text').value.trim();
+            if (!text) {
+                alert('Please describe your case');
+                return;
+            }
+            
+            document.getElementById('new-case-text').value = 'Creating case...';
+            fetch('/caseintake', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    case_text: text,
+                    client_id: 789
+                })
+            }).then(r=>r.json()).then(data => {
+                document.getElementById('new-case-text').value = '';
+                alert(`✅ Case created! ID: ${data.case_id} (${data.issue_type})`);
+                loadCases();  // Refresh cases list
+            }).catch(e=>alert('Error: '+e));
+        }
+        
+        function loadRecommendations(caseId) {
+            currentCaseId = caseId;
+            document.getElementById('recommendations').innerHTML = 'Loading lawyers...';
+            fetch(`/cases/${caseId}/recommendations`, {method: 'POST'})
+                .then(r=>r.json())
+                .then(showRecommendations);
+        }
+        
+        function showRecommendations(data) {
+            const div = document.getElementById('recommendations');
+            if (data.recommendations.length === 0) {
+                div.innerHTML = '<p>No matching lawyers found.</p>';
+                return;
+            }
+            div.innerHTML = data.recommendations.map((r, i) => `
+                <div class="lawyer-card">
+                    <strong>${r.name}</strong> (${r.specialization})<br>
+                    ${r.city} | ${r.experience_years} yrs | ⭐${r.rating}<br>
+                    Score: ${r.score} | <span class="status suggested">Suggested</span>
+                    <button onclick="acceptLawyer(${data.rec_ids[i]})" style="margin-left:10px;">Accept</button>
+                </div>
+            `).join('');
+        }
+        
+        function acceptLawyer(recId) {
+            fetch(`/recommendations/${recId}/client-accept`, {method: 'POST'})
+                .then(r=>r.json())
+                .then(() => {
+                    if (currentCaseId) loadRecommendations(currentCaseId);
+                    alert('✅ Lawyer request sent!');
+                });
+        }
+        
+        function sendMessage() {
+            const msg = document.getElementById('message').value.trim();
+            const useCtx = document.getElementById('use-context').checked;
+            if (!msg) return;
+            
+            addMessage('You', msg);
+            document.getElementById('message').value = '';
+            
+            fetch('/chat', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({message: msg, use_case_context: useCtx})
+            }).then(r=>r.json()).then(data => {
+                addMessage('Bot', data.answer + '\n\n<i>' + data.note + '</i>');
+            });
+        }
+        
+        function addMessage(sender, text) {
+            const chat = document.getElementById('chat');
+            chat.innerHTML += `<div style="margin: 10px 0;"><strong>${sender}:</strong> ${text.replace(/\n/g, '<br>')}</div>`;
+            chat.scrollTop = chat.scrollHeight;
+        }
+        
+        // Enter key support
+        document.getElementById('message').addEventListener('keypress', e => {
+            if (e.key === 'Enter') sendMessage();
+        });
+        document.getElementById('new-case-text').addEventListener('keypress', e => {
+            if (e.key === 'Enter' && e.ctrlKey) createNewCase();
+        });
+    </script>
+</body>
+</html>

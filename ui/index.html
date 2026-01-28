@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>LexConnect – Civil RAG Assistant</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f5f5f7;
+      color: #222;
+    }
+    header {
+      background: #111827;
+      color: #f9fafb;
+      padding: 1rem 1.5rem;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 1.4rem;
+    }
+    header p {
+      margin: 0.2rem 0 0;
+      font-size: 0.9rem;
+      opacity: 0.8;
+    }
+    main {
+      max-width: 960px;
+      margin: 1.5rem auto;
+      padding: 0 1rem 2rem;
+      display: grid;
+      gap: 1.5rem;
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+    }
+    @media (max-width: 800px) {
+      main {
+        grid-template-columns: 1fr;
+      }
+    }
+    section {
+      background: #ffffff;
+      border-radius: 0.75rem;
+      box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
+      padding: 1rem 1.25rem 1.25rem;
+    }
+    h2 {
+      margin: 0 0 0.6rem;
+      font-size: 1.1rem;
+      color: #111827;
+    }
+    label {
+      display: block;
+      margin: 0.4rem 0 0.15rem;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: #374151;
+    }
+    textarea, input[type="text"] {
+      width: 100%;
+      box-sizing: border-box;
+      border-radius: 0.5rem;
+      border: 1px solid #d1d5db;
+      padding: 0.55rem 0.65rem;
+      font-size: 0.9rem;
+      resize: vertical;
+      min-height: 3rem;
+    }
+    textarea:focus, input[type="text"]:focus {
+      outline: none;
+      border-color: #2563eb;
+      box-shadow: 0 0 0 1px #2563eb20;
+    }
+    button {
+      border: none;
+      border-radius: 0.5rem;
+      padding: 0.55rem 0.9rem;
+      font-size: 0.9rem;
+      cursor: pointer;
+      background: #2563eb;
+      color: #f9fafb;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      margin-top: 0.5rem;
+    }
+    button.secondary {
+      background: #6b7280;
+    }
+    button:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
+    .row {
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+      margin-top: 0.4rem;
+    }
+    .checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      font-size: 0.85rem;
+      color: #4b5563;
+    }
+    input[type="checkbox"] {
+      width: 0.95rem;
+      height: 0.95rem;
+    }
+    .status {
+      font-size: 0.8rem;
+      color: #6b7280;
+      margin-top: 0.4rem;
+    }
+    .chat-log {
+      border-radius: 0.5rem;
+      border: 1px solid #e5e7eb;
+      padding: 0.65rem;
+      max-height: 480px;
+      overflow-y: auto;
+      background: #f9fafb;
+      font-size: 0.87rem;
+      white-space: pre-wrap;
+    }
+    .msg-user {
+      color: #111827;
+      margin: 0.15rem 0;
+    }
+    .msg-bot {
+      color: #111827;
+      margin: 0.15rem 0 0.5rem;
+      border-left: 3px solid #2563eb;
+      padding-left: 0.5rem;
+    }
+    .badge {
+      display: inline-block;
+      font-size: 0.7rem;
+      padding: 0.1rem 0.4rem;
+      border-radius: 999px;
+      background: #e5e7eb;
+      color: #374151;
+      margin-left: 0.25rem;
+    }
+    .note {
+      font-size: 0.8rem;
+      color: #6b7280;
+      margin-top: 0.4rem;
+    }
+    footer {
+      text-align: center;
+      font-size: 0.75rem;
+      color: #9ca3af;
+      padding: 0.75rem 0 1rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>LexConnect – Civil Law RAG Assistant</h1>
+    <p>Stores your case context locally and answers queries using a civil-case RAG over Indian law.</p>
+  </header>
+
+  <main>
+    <!-- Case intake panel -->
+    <section>
+      <h2>1. Store your case details</h2>
+      <label for="caseText">Case narrative (facts, timeline, parties, reliefs):</label>
+      <textarea id="caseText" placeholder="Example: Married in 2018 in Delhi, living separately for 2 years, no children, house jointly owned, husband working in private company, wife homemaker..."></textarea>
+
+      <button id="btnSaveCase">Save / Update Case</button>
+      <div id="caseStatus" class="status">No case context saved yet.</div>
+
+      <p class="note">
+        Case details are stored only in the running backend process, not in a database.
+        Use this once per scenario, then ask multiple questions with “Use case context”.
+      </p>
+    </section>
+
+    <!-- Chat panel -->
+    <section>
+      <h2>2. Ask legal questions</h2>
+      <label for="question">Question:</label>
+      <textarea id="question" placeholder="Example: What civil remedies are available to file for divorce and claim maintenance?"></textarea>
+
+      <div class="row">
+        <label class="checkbox-label">
+          <input type="checkbox" id="useContext" />
+          Use stored case context
+          <span class="badge">case-specific</span>
+        </label>
+      </div>
+
+      <div class="row">
+        <button id="btnAsk">Ask Assistant</button>
+        <button id="btnClearChat" class="secondary">Clear Chat</button>
+      </div>
+
+      <div id="chatStatus" class="status"></div>
+
+      <div id="chatLog" class="chat-log"></div>
+
+      <p class="note">
+        Answers are generated by a small local language model guided by retrieved civil case chunks.
+        This is general information only; consult a qualified advocate for legal advice.
+      </p>
+    </section>
+  </main>
+
+  <footer>
+    LexConnect · Civil Law RAG Demo
+  </footer>
+
+  <script>
+    const API_BASE = "http://127.0.0.1:8000";
+
+    const caseTextEl   = document.getElementById("caseText");
+    const btnSaveCase  = document.getElementById("btnSaveCase");
+    const caseStatusEl = document.getElementById("caseStatus");
+
+    const questionEl   = document.getElementById("question");
+    const useContextEl = document.getElementById("useContext");
+    const btnAsk       = document.getElementById("btnAsk");
+    const btnClearChat = document.getElementById("btnClearChat");
+    const chatStatusEl = document.getElementById("chatStatus");
+    const chatLogEl    = document.getElementById("chatLog");
+
+    function appendChat(role, text) {
+      const div = document.createElement("div");
+      div.className = role === "user" ? "msg-user" : "msg-bot";
+      div.textContent = (role === "user" ? "You: " : "Assistant: ") + text;
+      chatLogEl.appendChild(div);
+      chatLogEl.scrollTop = chatLogEl.scrollHeight;
+    }
+
+    btnSaveCase.addEventListener("click", async () => {
+      const text = caseTextEl.value.trim();
+      if (!text) {
+        caseStatusEl.textContent = "Please enter some case details before saving.";
+        return;
+      }
+      btnSaveCase.disabled = true;
+      caseStatusEl.textContent = "Saving case details...";
+      try {
+        const res = await fetch(API_BASE + "/case/intake", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ case_text: text })
+        });
+        if (!res.ok) {
+          throw new Error("HTTP " + res.status);
+        }
+        const data = await res.json();
+        caseStatusEl.textContent = "Case saved. Extracted fields: " + JSON.stringify(data.details);
+      } catch (err) {
+        console.error(err);
+        caseStatusEl.textContent = "Failed to save case: " + err.message;
+      } finally {
+        btnSaveCase.disabled = false;
+      }
+    });
+
+    btnAsk.addEventListener("click", async () => {
+      const q = questionEl.value.trim();
+      if (!q) {
+        chatStatusEl.textContent = "Please type a question.";
+        return;
+      }
+      const useCtx = useContextEl.checked;
+
+      appendChat("user", q);
+      questionEl.value = "";
+      chatStatusEl.textContent = useCtx
+        ? "Asking with stored case context..."
+        : "Asking general civil law question...";
+
+      btnAsk.disabled = true;
+      try {
+        const res = await fetch(API_BASE + "/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: q,
+            use_case_context: useCtx
+          })
+        });
+        if (!res.ok) {
+          throw new Error("HTTP " + res.status);
+        }
+        const data = await res.json();
+        const answer = data.answer || "(no answer field)";
+        appendChat("bot", answer);
+        chatStatusEl.textContent = "Answer received.";
+      } catch (err) {
+        console.error(err);
+        chatStatusEl.textContent = "Error contacting backend: " + err.message;
+      } finally {
+        btnAsk.disabled = false;
+      }
+    });
+
+    btnClearChat.addEventListener("click", () => {
+      chatLogEl.innerHTML = "";
+      chatStatusEl.textContent = "";
+    });
+  </script>
+</body>
+</html>
