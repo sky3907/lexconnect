@@ -11,6 +11,7 @@ from database import init_db, get_db, Case, LawyerRecommendation, Recommendation
 from intake_agent import IntakeAgent
 from rag_slm import CivilRAGSLM
 from router_agent import RouterAgent
+from lawyer_agent import LawyerAgent
 
 app = FastAPI(title="LexConnect - Legal RAG + Lawyer Matching")
 
@@ -27,6 +28,7 @@ init_db()
 intake = IntakeAgent()
 rag = CivilRAGSLM()
 router = RouterAgent()
+lawyer_agent = LawyerAgent()
 
 class CaseInput(BaseModel):
     case_text: str
@@ -108,14 +110,21 @@ def client_accept(rec_id: int, db: Session = Depends(get_db)) -> Dict:
     return {"status": "client_accepted", "rec_id": rec_id}
 
 @app.post("/recommendations/{rec_id}/lawyer-accept")
-def lawyer_accept(rec_id: int, db: Session = Depends(get_db)) -> Dict:
-    """Lawyer accepts a client request."""
-    rec = db.query(LawyerRecommendation).filter(LawyerRecommendation.id == rec_id).first()
-    if not rec:
-        raise HTTPException(status_code=404, detail="Recommendation not found")
-    rec.status = RecommendationStatus.lawyer_accepted
-    db.commit()
-    return {"status": "lawyer_accepted", "rec_id": rec_id}
+def lawyer_accept(rec_id: int, db: Session = Depends(get_db)):
+    active = lawyer_agent.accept_case(db, rec_id)
+    if not active:
+        raise HTTPException(404, "Invalid recommendation")
+    return {"status": "case_activated", "active_case_id": active.id}
+
+@app.get("/lawyer/active-cases")
+def lawyer_active_cases(lawyer_id: int, db: Session = Depends(get_db)):
+    cases = lawyer_agent.get_active_cases(db, lawyer_id)
+    return [{
+        "active_id": c.id,
+        "case_id": c.case_id,
+        "issue_type": c.case.issue_type,
+        "description": c.case.description
+    } for c in cases]
 
 @app.post("/recommendations/{rec_id}/decline")
 def decline_rec(rec_id: int, db: Session = Depends(get_db)) -> Dict:
@@ -133,14 +142,15 @@ def get_cases(client_id: int, db: Session = Depends(get_db)) -> List[Dict]:
     cases = db.query(Case).filter(Case.client_id == client_id).all()
     return [{"id": c.id, "issue_type": c.issue_type, "description": c.description} for c in cases]
 
-@app.get("/lawyer-requests")
-def lawyer_requests(db: Session = Depends(get_db)) -> List[Dict]:
-    """Get pending lawyer requests."""
-    recs = db.query(LawyerRecommendation).filter(
-        LawyerRecommendation.status == "client_accepted"
-    ).join(LawyerRecommendation.case).all()
-    return [{"rec_id": r.id, "case_id": r.case_id, "issue_type": r.case.issue_type, "description": r.case.description} for r in recs]
-
+@app.get("/lawyer/requests")
+def lawyer_requests(lawyer_id: int, db: Session = Depends(get_db)):
+    reqs = lawyer_agent.get_pending_requests(db, lawyer_id)
+    return [{
+        "rec_id": r.id,
+        "case_id": r.case_id,
+        "issue_type": r.case.issue_type,
+        "description": r.case.description
+    } for r in reqs]
 # 🔥 MAIN CLIENT DASHBOARD (FIXES 404 ERROR)
 @app.get("/", response_class=HTMLResponse)
 async def client_dashboard():
@@ -367,40 +377,100 @@ async def client_dashboard():
 async def lawyer_dashboard():
     return HTMLResponse("""
 <!DOCTYPE html>
-<html><head><title>LexConnect Lawyer Dashboard</title>
-<style>*{font-family:system-ui,sans-serif;margin:0;padding:0;box-sizing:border-box;}
+<html>
+<head>
+<title>LexConnect – Lawyer Dashboard</title>
+<style>
+*{font-family:system-ui,sans-serif;margin:0;padding:0;box-sizing:border-box;}
 body{display:flex;height:100vh;background:#f5f7fa;}
-.sidebar{width:50%;padding:25px;border-right:1px solid #ddd;overflow-y:auto;}
-.main{width:50%;padding:25px;}
-.case-card{background:#fff;padding:25px;margin:15px 0;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.1);}</style>
-</head><body>
+.sidebar{width:40%;padding:25px;border-right:1px solid #ddd;overflow-y:auto;}
+.main{width:60%;padding:25px;}
+.case-card{background:#fff;padding:20px;margin:12px 0;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.1);}
+h2{margin-bottom:15px;}
+button{padding:10px 18px;border:none;border-radius:8px;font-size:14px;cursor:pointer;}
+.accept{background:#28a745;color:white;}
+.decline{background:#dc3545;color:white;}
+</style>
+</head>
+
+<body>
+
 <div class="sidebar">
-    <h2 style="color:#1a1a1a;margin-bottom:25px;">📥 Incoming Client Requests</h2>
-    <div id="requests">Loading requests...</div>
+    <h2>📥 Incoming Requests</h2>
+    <div id="requests">Loading...</div>
+
+    <h2 style="margin-top:30px;">⚖ Active Cases</h2>
+    <div id="active">Loading...</div>
 </div>
+
 <div class="main">
-    <h2 style="color:#1a1a1a;">👨‍⚖️ Lawyer Dashboard</h2>
-    <p>Clients who accepted your recommendations appear here for final confirmation.</p>
+    <h2>👨‍⚖️ Lawyer Workspace</h2>
+    <p>Select an active case to begin working.</p>
 </div>
+
 <script>
-fetch('/lawyer-requests').then(r=>r.json()).then(data=>{
-    const div=document.getElementById('requests');
+const LAWYER_ID = 3;
+
+function load(){
+    fetch(`/lawyer/requests?lawyer_id=${LAWYER_ID}`)
+        .then(r=>r.json())
+        .then(showRequests);
+
+    fetch(`/lawyer/active-cases?lawyer_id=${LAWYER_ID}`)
+        .then(r=>r.json())
+        .then(showActive);
+}
+
+function showRequests(data){
+    const div = document.getElementById('requests');
     if(!data?.length){
-        div.innerHTML='<div class="case-card" style="background:#e8f5e8;text-align:center;padding:40px;"><h3>📭 No Pending Requests</h3><p>Your clients will appear here after they accept your recommendation.</p></div>';
-    }else{
-        div.innerHTML=data.map(r=>`
-            <div class="case-card">
-                <h3>${r.issue_type.toUpperCase()} Case #${r.case_id}</h3>
-                <p style="color:#666;margin:15px 0;">${r.description}</p>
-                <button onclick="accept(${r.rec_id})" style="background:#28a745;color:white;padding:12px 24px;border:none;border-radius:8px;margin:5px;cursor:pointer;font-size:15px;">✅ ACCEPT CLIENT</button>
-                <button onclick="decline(${r.rec_id})" style="background:#dc3545;color:white;padding:12px 24px;border:none;border-radius:8px;margin:5px;cursor:pointer;font-size:15px;">❌ DECLINE</button>
-            </div>`).join('');
+        div.innerHTML = '<div class="case-card">📭 No pending requests</div>';
+        return;
     }
-});
-function accept(recId){fetch('/recommendations/'+recId+'/lawyer-accept',{method:'POST'}).then(()=>location.reload());}
-function decline(recId){fetch('/recommendations/'+recId+'/decline',{method:'POST'}).then(()=>location.reload());}
-</script></body></html>
+
+    div.innerHTML = data.map(r=>`
+        <div class="case-card">
+            <h4>${r.issue_type.toUpperCase()} Case #${r.case_id}</h4>
+            <p>${r.description}</p>
+            <button class="accept" onclick="accept(${r.rec_id})">Accept</button>
+            <button class="decline" onclick="decline(${r.rec_id})">Decline</button>
+        </div>
+    `).join('');
+}
+
+function showActive(data){
+    const div = document.getElementById('active');
+    if(!data?.length){
+        div.innerHTML = '<div class="case-card">⚠ No active cases</div>';
+        return;
+    }
+
+    div.innerHTML = data.map(c=>`
+        <div class="case-card">
+            <h4>${c.issue_type.toUpperCase()} Case #${c.case_id}</h4>
+            <p>${c.description}</p>
+            <span style="color:#28a745;font-weight:600;">ACTIVE</span>
+        </div>
+    `).join('');
+}
+
+function accept(id){
+    fetch(`/recommendations/${id}/lawyer-accept`, {method:'POST'})
+        .then(load);
+}
+
+function decline(id){
+    fetch(`/recommendations/${id}/decline`, {method:'POST'})
+        .then(load);
+}
+
+load();
+</script>
+
+</body>
+</html>
     """)
+
 
 @app.get("/health")
 def health() -> Dict:

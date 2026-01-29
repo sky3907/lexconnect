@@ -6,6 +6,7 @@ from datetime import datetime
 import enum
 import os
 
+
 DB_URL = os.getenv("LEGAL_RAG_DB_URL", "sqlite:///./legal_rag.db")
 
 engine = create_engine(
@@ -74,6 +75,21 @@ class LawyerRecommendation(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     case = relationship("Case", back_populates="recommendations")
     lawyer = relationship("LawyerProfile")
+
+
+
+class ActiveCase(Base):
+    __tablename__ = "active_cases"
+
+    id = Column(Integer, primary_key=True, index=True)
+    case_id = Column(Integer, ForeignKey("cases.id"))
+    lawyer_id = Column(Integer, ForeignKey("lawyer_profiles.id"))
+    status = Column(String, default="active")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    case = relationship("Case")
+    lawyer = relationship("LawyerProfile")
+
 
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
