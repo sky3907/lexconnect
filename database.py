@@ -1,11 +1,10 @@
-# database.py - COMPLETE VERSION
+# database.py - COMPLETE WORKING VERSION FOR LEXCONNECT
 from sqlalchemy import Column, Integer, String, Text, Enum, ForeignKey, DateTime
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 from sqlalchemy import create_engine
 from datetime import datetime
 import enum
 import os
-
 
 DB_URL = os.getenv("LEGAL_RAG_DB_URL", "sqlite:///./legal_rag.db")
 
@@ -28,6 +27,7 @@ class User(Base):
     name = Column(String(255), nullable=False)
     password_hash = Column(String(255), nullable=False)
     role = Column(Enum(UserRole), nullable=False)
+    phone = Column(String(20), nullable=True)
     cases = relationship("Case", back_populates="client", cascade="all, delete-orphan")
     lawyer_profile = relationship("LawyerProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
 
@@ -50,13 +50,13 @@ class CaseStatus(str, enum.Enum):
 class Case(Base):
     __tablename__ = "cases"
     id = Column(Integer, primary_key=True, index=True)
-    client_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    client_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     issue_type = Column(String(50), nullable=False)
     description = Column(Text, nullable=False)
     status = Column(Enum(CaseStatus), nullable=False, default=CaseStatus.open)
     created_at = Column(DateTime, default=datetime.utcnow)
     client = relationship("User", back_populates="cases")
-    recommendations = relationship("LawyerRecommendation", back_populates="case")  # ← FIXED
+    recommendations = relationship("LawyerRecommendation", back_populates="case")
 
 class RecommendationStatus(str, enum.Enum):
     suggested = "suggested"
@@ -76,23 +76,66 @@ class LawyerRecommendation(Base):
     case = relationship("Case", back_populates="recommendations")
     lawyer = relationship("LawyerProfile")
 
-
-
 class ActiveCase(Base):
     __tablename__ = "active_cases"
-
     id = Column(Integer, primary_key=True, index=True)
     case_id = Column(Integer, ForeignKey("cases.id"))
     lawyer_id = Column(Integer, ForeignKey("lawyer_profiles.id"))
     status = Column(String, default="active")
     created_at = Column(DateTime, default=datetime.utcnow)
-
     case = relationship("Case")
     lawyer = relationship("LawyerProfile")
 
-
+# 🔥 SEED DEMO DATA
 def init_db() -> None:
+    """Create tables + seed demo data"""
     Base.metadata.create_all(bind=engine)
+    
+    db = SessionLocal()
+    try:
+        # Demo Client
+        if not db.query(User).filter(User.email == "test@test.com").first():
+            demo_client = User(
+                email="test@test.com",
+                name="Demo Client", 
+                password_hash="demo_hash",
+                role=UserRole.client,
+                phone="9876543210"
+            )
+            db.add(demo_client)
+            db.commit()
+            print("✅ Demo client created: test@test.com")
+        
+        # Demo Lawyer
+        if not db.query(User).filter(User.email == "lawyer@demo.com").first():
+            demo_lawyer = User(
+                email="lawyer@demo.com",
+                name="Advocate Raj Sharma",
+                password_hash="lawyer_hash",
+                role=UserRole.lawyer,
+                phone="9876543211"
+            )
+            db.add(demo_lawyer)
+            db.commit()
+            
+            lawyer_profile = LawyerProfile(
+                user_id=demo_lawyer.id,
+                specialization="Property Law",
+                city="Gurugram",
+                experience_years=8,
+                rating=4,
+                is_available=1
+            )
+            db.add(lawyer_profile)
+            db.commit()
+            print("✅ Demo lawyer created: lawyer@demo.com")
+            
+    except Exception as e:
+        print(f"❌ Seed error: {e}")
+        db.rollback()
+    finally:
+        db.close()
+    print("✅ Database ready with demo data!")
 
 def get_db():
     db = SessionLocal()
@@ -100,3 +143,13 @@ def get_db():
         yield db
     finally:
         db.close()
+
+# 🔥 EXPORTS FOR app.py
+__all__ = [
+    'init_db', 'get_db', 
+    'User', 'UserRole', 
+    'Case', 'CaseStatus',
+    'LawyerProfile', 
+    'LawyerRecommendation', 'RecommendationStatus',
+    'ActiveCase'
+]
