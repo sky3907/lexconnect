@@ -419,6 +419,104 @@ async def client_dashboard(request: Request, client: User = Depends(get_current_
 </html>
     """)
 
+@app.get("/lawyer", response_class=HTMLResponse)
+async def lawyer_dashboard():
+    return HTMLResponse("""
+<!DOCTYPE html>
+<html>
+<head>
+<title>LexConnect – Lawyer Dashboard</title>
+<style>
+*{font-family:system-ui,sans-serif;margin:0;padding:0;box-sizing:border-box;}
+body{display:flex;height:100vh;background:#f5f7fa;}
+.sidebar{width:40%;padding:25px;border-right:1px solid #ddd;overflow-y:auto;}
+.main{width:60%;padding:25px;}
+.case-card{background:#fff;padding:20px;margin:12px 0;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.1);}
+h2{margin-bottom:15px;}
+button{padding:10px 18px;border:none;border-radius:8px;font-size:14px;cursor:pointer;}
+.accept{background:#28a745;color:white;}
+.decline{background:#dc3545;color:white;}
+</style>
+</head>
+
+<body>
+
+<div class="sidebar">
+    <h2>📥 Incoming Requests</h2>
+    <div id="requests">Loading...</div>
+
+    <h2 style="margin-top:30px;">⚖ Active Cases</h2>
+    <div id="active">Loading...</div>
+</div>
+
+<div class="main">
+    <h2>👨‍⚖️ Lawyer Workspace</h2>
+    <p>Select an active case to begin working.</p>
+</div>
+
+<script>
+const LAWYER_ID = 1;
+
+function load(){
+    fetch(`/lawyer/requests?lawyer_id=${LAWYER_ID}`)
+        .then(r=>r.json())
+        .then(showRequests);
+
+    fetch(`/lawyer/active-cases?lawyer_id=${LAWYER_ID}`)
+        .then(r=>r.json())
+        .then(showActive);
+}
+
+function showRequests(data){
+    const div = document.getElementById('requests');
+    if(!data?.length){
+        div.innerHTML = '<div class="case-card">📭 No pending requests</div>';
+        return;
+    }
+
+    div.innerHTML = data.map(r=>`
+        <div class="case-card">
+            <h4>${r.issue_type.toUpperCase()} Case #${r.case_id}</h4>
+            <p>${r.description}</p>
+            <button class="accept" onclick="accept(${r.rec_id})">Accept</button>
+            <button class="decline" onclick="decline(${r.rec_id})">Decline</button>
+        </div>
+    `).join('');
+}
+
+function showActive(data){
+    const div = document.getElementById('active');
+    if(!data?.length){
+        div.innerHTML = '<div class="case-card">⚠ No active cases</div>';
+        return;
+    }
+
+    div.innerHTML = data.map(c=>`
+        <div class="case-card">
+            <h4>${c.issue_type.toUpperCase()} Case #${c.case_id}</h4>
+            <p>${c.description}</p>
+            <span style="color:#28a745;font-weight:600;">ACTIVE</span>
+        </div>
+    `).join('');
+}
+
+function accept(id){
+    fetch(`/recommendations/${id}/lawyer-accept`, {method:'POST'})
+        .then(load);
+}
+
+function decline(id){
+    fetch(`/recommendations/${id}/decline`, {method:'POST'})
+        .then(load);
+}
+
+load();
+</script>
+
+</body>
+</html>
+    """)
+
 # 🔥 API ENDPOINTS - FULLY WORKING
 @app.post("/caseintake")
 def intake_case(payload: CaseInput, db: Session = Depends(get_db)) -> Dict:
@@ -457,6 +555,48 @@ def get_recommendations(case_id: int, db: Session = Depends(get_db)) -> Dict:
 @app.post("/recommendations/{rec_id}/client-accept")
 def client_accept(rec_id: int, db: Session = Depends(get_db)) -> Dict:
     return {"status": "client_accepted", "rec_id": rec_id}
+
+@app.post("/recommendations/{rec_id}/lawyer-accept")
+def lawyer_accept(rec_id: int, db: Session = Depends(get_db)):
+    active = lawyer_agent.accept_case(db, rec_id)
+    if not active:
+        raise HTTPException(status_code=404, detail="Invalid recommendation")
+    return {"status": "case_activated", "active_case_id": active.id}
+
+@app.post("/recommendations/{rec_id}/decline")
+def decline_rec(rec_id: int, db: Session = Depends(get_db)) -> Dict:
+    rec = db.query(LawyerRecommendation).filter(
+        LawyerRecommendation.id == rec_id
+    ).first()
+    
+    if not rec:
+        raise HTTPException(status_code=404, detail="Recommendation not found")
+    
+    rec.status = RecommendationStatus.declined
+    db.commit()
+    return {"status": "declined"}
+
+@app.get("/lawyer/active-cases")
+def lawyer_active_cases(lawyer_id: int, db: Session = Depends(get_db)):
+    cases = lawyer_agent.get_active_cases(db, lawyer_id)
+    
+    return [{
+        "active_id": c.id,
+        "case_id": c.case_id,
+        "issue_type": c.case.issue_type,
+        "description": c.case.description
+    } for c in cases]
+
+@app.get("/lawyer/requests")
+def lawyer_requests(lawyer_id: int, db: Session = Depends(get_db)):
+    reqs = lawyer_agent.get_pending_requests(db, lawyer_id)
+    
+    return [{
+        "rec_id": r.id,
+        "case_id": r.case_id,
+        "issue_type": r.case.issue_type,
+        "description": r.case.description
+    } for r in reqs]
 
 @app.get("/health")
 def health(client: User = Depends(get_current_client)) -> Dict:
