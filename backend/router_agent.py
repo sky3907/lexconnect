@@ -1,7 +1,7 @@
 # router_agent.py
 from typing import List, Dict
 from sqlalchemy.orm import Session
-from .database import LawyerProfile, LawyerRecommendation, RecommendationStatus, Case
+from database import LawyerProfile, LawyerRecommendation, RecommendationStatus, Case
 
 class RouterAgent:
     def __init__(self):

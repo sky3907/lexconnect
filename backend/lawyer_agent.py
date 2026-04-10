@@ -1,5 +1,5 @@
 from datetime import datetime
-from .database import (
+from database import (
     Case,
     CaseStatus,
     LawyerProfile,

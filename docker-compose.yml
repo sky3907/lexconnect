@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  # RAG Model Service
+  rag_service:
+    build:
+      context: .
+      dockerfile: rag_service/Dockerfile
+    container_name: lexconnect-rag-service
+    ports:
+      - "8001:8001"
+    environment:
+      - PYTHON_VERSION=3.10
+      - PORT=8001
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - lexconnect-network
+
+  # Backend API Service
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: lexconnect-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHON_VERSION=3.10
+      - PORT=8000
+      - RAG_SERVICE_URL=http://rag_service:8001
+      - DATABASE_URL=sqlite:///./lexconnect.db
+      - SECRET_KEY=your-secret-key-for-local-dev
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:5173
+    depends_on:
+      rag_service:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app/backend
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - lexconnect-network
+
+  # Frontend Service (Optional)
+  frontend:
+    build:
+      context: frontend
+      dockerfile: Dockerfile
+    container_name: lexconnect-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8000
+    depends_on:
+      - backend
+    networks:
+      - lexconnect-network
+
+networks:
+  lexconnect-network:
+    driver: bridge
+
+volumes:
+  data:
+  models:

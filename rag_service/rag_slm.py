@@ -1,5 +1,3 @@
-import sys, os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import json
 import re
 from typing import List, Dict, Optional
@@ -7,7 +5,7 @@ from typing import List, Dict, Optional
 import faiss
 from sentence_transformers import SentenceTransformer
 
-from config_paths import FAISS_INDEX_PATH, META_JSONL, EMBED_MODEL_NAME
+from config_paths_rag import FAISS_INDEX_PATH, META_JSONL, EMBED_MODEL_NAME
 from local_slm import calllocalslm as call_local_slm
 from legal_ground_truth import get_grounding, get_focused_grounding
 

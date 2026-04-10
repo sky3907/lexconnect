@@ -1,0 +1,24 @@
+# RAG Model Service Requirements
+# Lightweight dependencies for the RAG inference service
+
+# Web framework
+fastapi
+uvicorn[standard]
+
+# Machine Learning & NLP
+sentence-transformers      # Generate semantic embeddings
+faiss-cpu                  # Vector similarity search
+torch                      # PyTorch dependencies
+transformers               # HuggingFace transformers
+
+# Local LLM Inference
+llama-cpp-python           # Qwen2.5 3B model inference
+
+# Utilities
+python-dotenv              # Environment configuration
+numpy                      # Numerical computing
+tqdm                       # Progress bars
+
+# Optional: For GPU acceleration (uncomment if needed)
+# llama-cpp-python[server]  # Server extras
+# cuda-toolkit            # For NVIDIA GPU support

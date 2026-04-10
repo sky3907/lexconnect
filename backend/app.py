@@ -1,4 +1,4 @@
-import suppress_warnings
+
 
 from fastapi import FastAPI, Depends, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,16 +11,16 @@ from typing import Dict, Optional
 from sqlalchemy.orm import Session
 from hashlib import sha256
 
-from .database import (
+from database import (
     init_db, get_db, Case, CaseStatus, LawyerRecommendation,
     RecommendationStatus, User, UserRole, LawyerProfile, ActiveCase,
     Message, VideoCall, CallSession
 )
 
-from .intake_agent import IntakeAgent
-from .rag_slm import CivilRAGSLM
-from .router_agent import RouterAgent
-from .lawyer_agent import LawyerAgent
+from intake_agent import IntakeAgent
+from rag_slm import CivilRAGSLM
+from router_agent import RouterAgent
+from lawyer_agent import LawyerAgent
 
 
 # ---------------------------------------------------------------------------

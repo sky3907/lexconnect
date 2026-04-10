@@ -2,7 +2,7 @@
 import re
 from typing import Optional, Dict
 from sqlalchemy.orm import Session
-from .database import Case, CaseStatus
+from database import Case, CaseStatus
 
 
 class IntakeAgent:

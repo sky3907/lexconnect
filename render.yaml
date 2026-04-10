@@ -1,0 +1,100 @@
+# Render Multi-Service Deployment Configuration
+# This defines two separate services: Backend API and RAG Model Service
+
+services:
+  # ==================== RAG MODEL SERVICE ====================
+  - type: web
+    name: lexconnect-rag-service
+    runtime: python
+    pythonVersion: 3.10
+    plan: standard
+    
+    # Build & startup
+    buildCommand: pip install -r rag_service/requirements.txt
+    startCommand: cd rag_service && uvicorn rag_app:app --host 0.0.0.0 --port 8001
+    
+    # Environment variables
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10
+      - key: PORT
+        value: 8001
+    
+    # Automatic pull of source code from Git repo
+    repo: # Leave blank if pushing via CLI
+    
+    # Health check
+    healthCheckPath: /health
+    healthCheckInterval: 30
+    healthCheckTimeout: 5
+    
+    # Resource allocation
+    numInstances: 1
+    maxNumInstances: 2
+
+  # ==================== BACKEND API SERVICE ====================
+  - type: web
+    name: lexconnect-backend
+    runtime: python
+    pythonVersion: 3.10
+    plan: standard
+    
+    # Build & startup
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: cd backend && uvicorn app:app --host 0.0.0.0 --port 8000
+    
+    # Environment variables
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10
+      - key: PORT
+        value: 8000
+      - key: RAG_SERVICE_URL
+        # This should point to the RAG service URL on Render
+        # Replace with your actual Render RAG service URL
+        value: https://lexconnect-rag-service.onrender.com
+      - key: DATABASE_URL
+        value: # Your database URL (e.g., PostgreSQL on Render)
+      - key: CORS_ORIGINS
+        value: "https://lexconnect-frontend.onrender.com,http://localhost:3000"
+    
+    # Health check
+    healthCheckPath: /
+    healthCheckInterval: 30
+    healthCheckTimeout: 5
+    
+    # Resource allocation
+    numInstances: 1
+    maxNumInstances: 3
+    
+    # Depends on RAG service
+    serviceGroup: lexconnect-services
+
+  # ==================== FRONTEND SERVICE (Optional) ====================
+  - type: web
+    name: lexconnect-frontend
+    runtime: node
+    buildCommand: cd frontend && npm install && npm run build
+    startCommand: cd frontend && npm run preview
+    
+    # Environment variables
+    envVars:
+      - key: VITE_API_BASE_URL
+        value: https://lexconnect-backend.onrender.com
+    
+    # Health check
+    healthCheckPath: /
+    healthCheckInterval: 30
+    healthCheckTimeout: 5
+    
+    # Resource allocation
+    numInstances: 1
+    maxNumInstances: 2
+
+  # ==================== DATABASE SERVICE (Optional: PostgreSQL) ====================
+  # Uncomment if using Render's PostgreSQL
+  # - type: pserv
+  #   name: lexconnect-db
+  #   plan: standard
+  #   ipAllowList: []
+  #   previewPlan: starter
